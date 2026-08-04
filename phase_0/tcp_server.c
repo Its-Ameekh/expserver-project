@@ -77,7 +77,7 @@ int main(void){
         ssize_t read_n=recv(conn_sock_fd,buff,sizeof(buff),0);
         if(read_n==-1){
             perror("recv");
-            break;
+            exit(1);
         }else if(read_n>0){
             buff[read_n]='\0';
             printf("[CLIENT MESSAGE] %s", buff);
@@ -88,8 +88,9 @@ int main(void){
         }else{
             close(conn_sock_fd);
             printf("[INFO] Client closed the connection\n");
-            break;
+            exit(1);
         }
+        
         } 
     }
 
