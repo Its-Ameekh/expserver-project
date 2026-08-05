@@ -20,9 +20,9 @@ int main(){
     struct sockaddr_in server_addr;
 
     //dont forget host to network
-    server_addr.sin_family = AF_INET6;
+    server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    server_addr.sin_port = SERVER_PORT;
+    server_addr.sin_port = htons(SERVER_PORT);
 
     while (1) {
         printf("Enter a string : ");
