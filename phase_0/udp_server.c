@@ -48,7 +48,7 @@ int main(){
 
 
     int listening_sock_fd=socket(AF_INET,SOCK_DGRAM,0);
-    //study how EXIT_FAILURE WORKS
+    
     
     if(listening_sock_fd<0){
         perror("socket:");
