@@ -13,15 +13,7 @@
 #define MAX_ACCEPT_BACKLOG 5
 #define MAX_EPOLL_EVENTS 10
 
-void strrev(char *str)
-{
-  for (int start = 0, end = strlen(str) - 2; start < end; start++, end--)
-  {
-    char temp = str[start];
-    str[start] = str[end];
-    str[end] = temp;
-  }
-}
+
 
 int main(void) {
 
