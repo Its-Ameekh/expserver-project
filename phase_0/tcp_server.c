@@ -14,7 +14,6 @@
 #define MAX_EPOLL_EVENTS 10
 
 
-
 int main(void) {
 
     // both event and events are completely different
@@ -28,7 +27,7 @@ int main(void) {
         // perror reads errno from operating system and prints a human readable error message to stderr
         // here we get socket: "Permission denied or something"
         // notice we gave the "socket"
-        exit(1);
+        exit(EXIT_FAILURE);
         // exit(0) means success, exit(1) means failure,
         // difference from return is that this can exit pgm even from deep inside a function call not just from main
     }
@@ -37,14 +36,10 @@ int main(void) {
     // before we bind the socket to a port, we set the SO_REUSEADDR option on the socket
     int enable = 1;
 
-    if (setsockopt(listening_socket_fd,
-                   SOL_SOCKET,
-                   SO_REUSEADDR,
-                   &enable,
-                   sizeof(enable)) == -1) {
+    if (setsockopt(listening_socket_fd,SOL_SOCKET,SO_REUSEADDR,&enable,sizeof(enable)) == -1) {
         perror("setsockopt");
         close(listening_socket_fd);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     struct sockaddr_in server_addr;
@@ -54,9 +49,7 @@ int main(void) {
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     // bind the socket to the port
-    if (bind(listening_socket_fd,
-             (struct sockaddr *)&server_addr,
-             sizeof(server_addr)) == -1) {
+    if (bind(listening_socket_fd,(struct sockaddr *)&server_addr,sizeof(server_addr)) == -1) {
         perror("bind");
         close(listening_socket_fd);
         exit(1);
@@ -92,10 +85,7 @@ int main(void) {
     event.events = EPOLLIN;
     event.data.fd = listening_socket_fd;
 
-    if (epoll_ctl(epoll_fd,
-                  EPOLL_CTL_ADD,
-                  listening_socket_fd,
-                  &event) == -1) {
+    if (epoll_ctl(epoll_fd,EPOLL_CTL_ADD,listening_socket_fd,&event) == -1) {
         perror("epoll_ctl");
         close(epoll_fd);
         close(listening_socket_fd);
@@ -108,12 +98,7 @@ int main(void) {
         // initially this is only the listening socket
         printf("[DEBUG] Epoll wait\n");
 
-        int n_ready_fds = epoll_wait(
-            epoll_fd,
-            events,
-            MAX_EPOLL_EVENTS,
-            -1
-        );
+        int n_ready_fds = epoll_wait(epoll_fd,events,MAX_EPOLL_EVENTS,-1);
 
         if (n_ready_fds == -1) {
             perror("epoll_wait");
@@ -131,11 +116,7 @@ int main(void) {
 
             if (curr_fd == listening_socket_fd) {
 
-                int conn_sock_fd = accept(
-                    listening_socket_fd,
-                    (struct sockaddr *)&client_addr,
-                    &client_addr_len
-                );
+                int conn_sock_fd = accept(listening_socket_fd,(struct sockaddr *)&client_addr,&client_addr_len);
 
                 if (conn_sock_fd == -1) {
                     perror("accept");
@@ -148,10 +129,7 @@ int main(void) {
                 event.events = EPOLLIN;
                 event.data.fd = conn_sock_fd;
 
-                if (epoll_ctl(epoll_fd,
-                              EPOLL_CTL_ADD,
-                              conn_sock_fd,
-                              &event) == -1) {
+                if (epoll_ctl(epoll_fd,EPOLL_CTL_ADD,conn_sock_fd,&event) == -1) {
                     perror("epoll_ctl");
                     close(conn_sock_fd);
                     continue;
@@ -166,22 +144,12 @@ int main(void) {
 
                 char buff[BUFF_SIZE];
 
-                ssize_t read_n = recv(
-                    curr_fd,
-                    buff,
-                    sizeof(buff) - 1,
-                    0
-                );
+                ssize_t read_n = recv(curr_fd,buff,sizeof(buff) - 1,0);
 
                 if (read_n <= 0) {
 
                     // client has disconnected or recv encountered an error
-                    epoll_ctl(
-                        epoll_fd,
-                        EPOLL_CTL_DEL,
-                        curr_fd,
-                        NULL
-                    );
+                    epoll_ctl(epoll_fd,EPOLL_CTL_DEL,curr_fd,NULL);
 
                     close(curr_fd);
 
@@ -201,22 +169,12 @@ int main(void) {
                     strrev(buff);
 
                     // send the reversed string back to client
-                    ssize_t sent_n = send(
-                        curr_fd,
-                        buff,
-                        read_n,
-                        0
-                    );
+                    ssize_t sent_n = send(curr_fd,buff,read_n,0);
 
                     if (sent_n == -1) {
                         perror("send");
 
-                        epoll_ctl(
-                            epoll_fd,
-                            EPOLL_CTL_DEL,
-                            curr_fd,
-                            NULL
-                        );
+                        epoll_ctl(epoll_fd,EPOLL_CTL_DEL,curr_fd,NULL);
 
                         close(curr_fd);
                     }

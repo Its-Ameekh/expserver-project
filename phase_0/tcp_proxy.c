@@ -136,7 +136,8 @@ void handle_upstream(int upstream_sock_fd) {
 
     char buff[BUFF_SIZE];
 
-    int read_n = recv(upstream_sock_fd,buff,sizeof(buff),0);
+    int read_n = recv(upstream_sock_fd,buff,sizeof(buff),0
+);
 
     // Upstream closed connection or error occurred
     if (read_n <= 0) {
