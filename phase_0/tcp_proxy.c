@@ -23,6 +23,7 @@ int epoll_fd,listen_sock_fd;
 struct epoll_event events[MAX_EPOLL_EVENTS];
 int route_table[MAX_SOCKS][2], route_table_size = 0;
 
+
 void epoll_attach(int epoll_fd,int fd,int events){
     //fn used to attach a fd to an epoll instance
     struct epoll_event event;
@@ -36,6 +37,35 @@ void epoll_attach(int epoll_fd,int fd,int events){
     }
 }
 
+int connect_upstream() {
+
+    // create a TCP socket for communicating with the upstream server
+    int upstream_sock_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (upstream_sock_fd == -1) {
+        perror("socket");
+        return -1;
+    }
+
+    // address of the upstream server
+    struct sockaddr_in upstream_addr;
+
+    upstream_addr.sin_family = AF_INET;
+    upstream_addr.sin_port = htons(UPSTREAM_PORT);
+    upstream_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    // connect to upstream server
+    if (connect(upstream_sock_fd,(struct sockaddr *)&upstream_addr,sizeof(upstream_addr)) == -1) {
+        perror("connect");
+        close(upstream_sock_fd);
+        return -1;
+    }
+
+    printf("[INFO] Connected to upstream server\n");
+
+    return upstream_sock_fd;
+}
+
 int create_loop(){
     epoll_fd=epoll_create1(0);
     if(epoll_fd==-1){
@@ -43,23 +73,6 @@ int create_loop(){
         exit(EXIT_FAILURE);
     }
     return epoll_fd;
-}
-
-int connect_upstream(){
-    //pyhron server uses tcp
-    int upstream_sock_fd=socket(AF_INET,SOCK_STREAM,0);
-    struct sockaddr_in upstream_addr;
-    upstream_addr.sin_family=AF_INET;
-    upstream_addr.sin_port=htons(UPSTREAM_PORT);
-    upstream_addr.sin_addr.s_addr=inet_addr("127.0.0.1");
-
-    if(connect(upstream_sock_fd,(struct sockaddr *)&upstream_addr,sizeof(upstream_addr))==-1){
-        perror("connect");
-        close(upstream_sock_fd);
-        return -1;
-    }
-    return upstream_sock_fd;
-    //the tcp connection on upstream server is handled by the python server
 }
 
 void accept_connection(int listening_socket_fd){
