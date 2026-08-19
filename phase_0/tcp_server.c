@@ -99,7 +99,7 @@ int main(void) {
         printf("[DEBUG] Epoll wait\n");
 
         int n_ready_fds = epoll_wait(epoll_fd,events,MAX_EPOLL_EVENTS,-1);
-
+                                    //fd,*events,maxevents,timeout
         if (n_ready_fds == -1) {
             perror("epoll_wait");
             continue;
