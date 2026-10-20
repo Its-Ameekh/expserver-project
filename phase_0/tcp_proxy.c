@@ -68,6 +68,7 @@ int connect_upstream() {
 
 int create_loop(){
     epoll_fd=epoll_create1(0);
+    //create doesnt let us pass flags and has a useless size field ignored by modern kernels
     if(epoll_fd==-1){
         perror("epoll_create");
         exit(EXIT_FAILURE);
