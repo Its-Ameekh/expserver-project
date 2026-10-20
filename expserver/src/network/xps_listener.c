@@ -68,7 +68,8 @@ xps_listener_t *xps_listener_create(xps_core_t *core, const char *host, u_int po
   listener->sock_fd = sock_fd;
 
   // Attach listener to loop
-  if (xps_loop_attach(core->loop, sock_fd, EPOLLIN, listener, listener_connection_handler) != OK) {
+  // Listener only needs read events, so no write_cb and close_cb
+  if (xps_loop_attach(core->loop, sock_fd, EPOLLIN, listener, listener_connection_handler, NULL, NULL) != OK) {
     logger(LOG_ERROR, "xps_listener_create()", "xps_loop_attach() failed");
     free(listener);
     close(sock_fd);
@@ -125,6 +126,13 @@ void listener_connection_handler(void *ptr) {
       return;
     logger(LOG_ERROR, "listener_connection_handler()", "accept() failed");
     perror("Error message");
+    return;
+  }
+
+  // Make connection socket non-blocking so send() can never block the server
+  if (make_socket_non_blocking(conn_sock_fd) != OK) {
+    logger(LOG_ERROR, "listener_connection_handler()", "make_socket_non_blocking() failed");
+    close(conn_sock_fd);
     return;
   }
 
