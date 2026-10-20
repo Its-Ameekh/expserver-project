@@ -191,12 +191,62 @@ int xps_loop_detach(xps_loop_t *loop, u_int fd) {
   return OK;
 }
 
+/**
+ * Does the pending recv() / send() work of every connection.
+ *
+ * With edge triggered epoll an event is reported only once, so the ready
+ * flags remember it until recv() / send() returns EAGAIN.
+ *
+ * @param loop : loop whose core's connections are handled
+ * @return : true if some connection still has read or write work left
+ */
+bool handle_connections(xps_loop_t *loop) {
+  assert(loop != NULL);
+
+  vec_void_t *connections = &(loop->core->connections);
+
+  for (int i = 0; i < connections->length; i++) {
+    xps_connection_t *connection = connections->data[i];
+    if (connection == NULL)
+      continue;
+
+    if (connection->read_ready == true)
+      connection->recv_handler(connection);
+
+    // recv_handler may have destroyed the connection
+    if (connections->data[i] == NULL)
+      continue;
+
+    if (connection->write_ready == true && connection->write_buff_list->len > 0)
+      connection->send_handler(connection);
+  }
+
+  // Check if any connection is still ready for more work
+  for (int i = 0; i < connections->length; i++) {
+    xps_connection_t *connection = connections->data[i];
+    if (connection == NULL)
+      continue;
+
+    if (connection->read_ready == true)
+      return true;
+
+    if (connection->write_ready == true && connection->write_buff_list->len > 0)
+      return true;
+  }
+
+  return false;
+}
+
 void xps_loop_run(xps_loop_t *loop) {
   assert(loop != NULL);
 
   while (1) {
+    // Pending work -> just poll epoll (0), otherwise block until an event (-1)
+    bool has_ready_connections = handle_connections(loop);
+    int timeout = has_ready_connections ? 0 : -1;
+
     logger(LOG_DEBUG, "xps_loop_run()", "epoll wait");
-    int n_events = epoll_wait(loop->epoll_fd, loop->epoll_events, MAX_EPOLL_EVENTS, -1);
+    int n_events = epoll_wait(loop->epoll_fd, loop->epoll_events, MAX_EPOLL_EVENTS, timeout);
     logger(LOG_DEBUG, "xps_loop_run()", "epoll wait over");
 
     if (n_events < 0) {

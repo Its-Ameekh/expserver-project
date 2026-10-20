@@ -7,6 +7,8 @@
 void connection_loop_read_handler(void *ptr);
 void connection_loop_write_handler(void *ptr);
 void connection_loop_close_handler(void *ptr);
+void connection_read_handler(void *ptr);
+void connection_write_handler(void *ptr);
 
 xps_connection_t *xps_connection_create(xps_core_t *core, u_int sock_fd) {
   assert(core != NULL);
@@ -26,7 +28,8 @@ xps_connection_t *xps_connection_create(xps_core_t *core, u_int sock_fd) {
   }
 
   // Attach sock_fd to epoll for read and write events
-  if (xps_loop_attach(core->loop, sock_fd, EPOLLIN | EPOLLOUT, connection, connection_loop_read_handler,
+  // Edge triggered: epoll notifies only when the socket's state changes
+  if (xps_loop_attach(core->loop, sock_fd, EPOLLIN | EPOLLOUT | EPOLLET, connection, connection_loop_read_handler,
                       connection_loop_write_handler, connection_loop_close_handler) != OK) {
     logger(LOG_ERROR, "xps_connection_create()", "xps_loop_attach() failed");
     xps_buffer_list_destroy(write_buff_list);
@@ -40,6 +43,10 @@ xps_connection_t *xps_connection_create(xps_core_t *core, u_int sock_fd) {
   connection->listener = NULL;
   connection->remote_ip = get_remote_ip(sock_fd);
   connection->write_buff_list = write_buff_list;
+  connection->read_ready = false;
+  connection->write_ready = false;
+  connection->send_handler = connection_write_handler;
+  connection->recv_handler = connection_read_handler;
 
   // Add connection to core's 'connections' list
   vec_push(&(core->connections), connection);
@@ -78,8 +85,24 @@ void xps_connection_destroy(xps_connection_t *connection) {
   logger(LOG_DEBUG, "xps_connection_destroy()", "destroyed connection");
 }
 
-// Function definition for read callback of connection
+// Epoll read callback: only marks the connection as ready to read
 void connection_loop_read_handler(void *ptr) {
+  assert(ptr != NULL);
+  xps_connection_t *connection = ptr;
+
+  connection->read_ready = true;
+}
+
+// Epoll write callback: only marks the connection as ready to write
+void connection_loop_write_handler(void *ptr) {
+  assert(ptr != NULL);
+  xps_connection_t *connection = ptr;
+
+  connection->write_ready = true;
+}
+
+// Receives data from the client, called by the loop while read_ready is true
+void connection_read_handler(void *ptr) {
 
   // Validate params
   assert(ptr != NULL);
@@ -92,9 +115,11 @@ void connection_loop_read_handler(void *ptr) {
   long read_n = recv(connection->sock_fd, buff, sizeof(buff) - 1, 0);
 
   if (read_n < 0) {
-    // Non-blocking socket has nothing to read right now
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    // Socket fully drained, wait for the next read event from epoll
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      connection->read_ready = false;
       return;
+    }
     logger(LOG_ERROR, "connection_read_handler()", "recv() failed");
     perror("Error message");
     xps_connection_destroy(connection);
@@ -137,8 +162,8 @@ void connection_loop_read_handler(void *ptr) {
   xps_buffer_list_append(connection->write_buff_list, reversed);
 }
 
-// Function definition for write callback of connection
-void connection_loop_write_handler(void *ptr) {
+// Sends buffered data to the client, called by the loop while write_ready is true
+void connection_write_handler(void *ptr) {
   assert(ptr != NULL);
   xps_connection_t *connection = ptr;
 
@@ -158,9 +183,11 @@ void connection_loop_write_handler(void *ptr) {
   xps_buffer_destroy(buff);
 
   if (write_n < 0) {
-    // Kernel buffer is full, try again on the next write event
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    // Kernel buffer is full, keep the data and wait for the next write event
+    if (errno == EAGAIN || errno == EWOULDBLOCK) {
+      connection->write_ready = false;
       return;
+    }
     logger(LOG_ERROR, "connection_write_handler()", "send() failed");
     perror("Error message");
     xps_connection_destroy(connection);

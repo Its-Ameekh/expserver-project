@@ -69,7 +69,7 @@ xps_listener_t *xps_listener_create(xps_core_t *core, const char *host, u_int po
 
   // Attach listener to loop
   // Listener only needs read events, so no write_cb and close_cb
-  if (xps_loop_attach(core->loop, sock_fd, EPOLLIN, listener, listener_connection_handler, NULL, NULL) != OK) {
+  if (xps_loop_attach(core->loop, sock_fd, EPOLLIN | EPOLLET, listener, listener_connection_handler, NULL, NULL) != OK) {
     logger(LOG_ERROR, "xps_listener_create()", "xps_loop_attach() failed");
     free(listener);
     close(sock_fd);
@@ -115,35 +115,41 @@ void listener_connection_handler(void *ptr) {
   assert(ptr != NULL);
   xps_listener_t *listener = ptr;
 
-  struct sockaddr conn_addr;
-  socklen_t conn_addr_len = sizeof(conn_addr);
+  // Edge triggered: one event may stand for many pending connections, so accept them all
+  while (1) {
+    struct sockaddr conn_addr;
+    socklen_t conn_addr_len = sizeof(conn_addr);
 
-  // Accepting connection -> returns a NEW fd for this client
-  int conn_sock_fd = accept(listener->sock_fd, &conn_addr, &conn_addr_len);
-  if (conn_sock_fd < 0) {
-    // Listener is non-blocking, so no pending connection is not an error
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
-      return;
-    logger(LOG_ERROR, "listener_connection_handler()", "accept() failed");
-    perror("Error message");
-    return;
+    // Accepting connection -> returns a NEW fd for this client
+    int conn_sock_fd = accept(listener->sock_fd, &conn_addr, &conn_addr_len);
+    if (conn_sock_fd < 0) {
+      // Accept queue is empty
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        break;
+      // Interrupted or client gave up before accept, try the next one
+      if (errno == EINTR || errno == ECONNABORTED)
+        continue;
+      logger(LOG_ERROR, "listener_connection_handler()", "accept() failed");
+      perror("Error message");
+      break;
+    }
+
+    // Make connection socket non-blocking so send() can never block the server
+    if (make_socket_non_blocking(conn_sock_fd) != OK) {
+      logger(LOG_ERROR, "listener_connection_handler()", "make_socket_non_blocking() failed");
+      close(conn_sock_fd);
+      continue;
+    }
+
+    // Creating connection instance
+    xps_connection_t *client = xps_connection_create(listener->core, conn_sock_fd);
+    if (client == NULL) {
+      logger(LOG_ERROR, "listener_connection_handler()", "xps_connection_create() failed");
+      close(conn_sock_fd);
+      continue;
+    }
+    client->listener = listener;
+
+    logger(LOG_INFO, "listener_connection_handler()", "new connection");
   }
-
-  // Make connection socket non-blocking so send() can never block the server
-  if (make_socket_non_blocking(conn_sock_fd) != OK) {
-    logger(LOG_ERROR, "listener_connection_handler()", "make_socket_non_blocking() failed");
-    close(conn_sock_fd);
-    return;
-  }
-
-  // Creating connection instance
-  xps_connection_t *client = xps_connection_create(listener->core, conn_sock_fd);
-  if (client == NULL) {
-    logger(LOG_ERROR, "listener_connection_handler()", "xps_connection_create() failed");
-    close(conn_sock_fd);
-    return;
-  }
-  client->listener = listener;
-
-  logger(LOG_INFO, "listener_connection_handler()", "new connection");
 }
